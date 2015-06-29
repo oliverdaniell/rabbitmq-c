@@ -1,5 +1,11 @@
 # vim:set ts=2 sw=2 sts=2 et:
 cmake_minimum_required(VERSION 3.0.0)
+
+include("cmake/HunterGate.cmake")
+HunterGate(
+    URL "https://github.com/ruslo/hunter/archive/v0.11.4.tar.gz"
+    SHA1 "caded3d303e471f789db67e658b5a4ffb221d670"
+)
 project(rabbitmq-c VERSION 5.1.1 LANGUAGES "C")
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
@@ -34,25 +40,6 @@ string(REGEX MATCH "[0-9]+" _API_VERSION_PATCH ${_API_VERSION_PATCH})
 # VERSION to match what is in autotools
 set(VERSION ${_API_VERSION_MAJOR}.${_API_VERSION_MINOR}.${_API_VERSION_PATCH})
 
-if (MSVC)
-  set(CMAKE_C_FLAGS "/W4 /nologo ${CMAKE_C_FLAGS}")
-elseif (CMAKE_C_COMPILER_ID MATCHES ".*Clang")
-  set(CMAKE_C_FLAGS "-Wall -Wextra -pedantic -Wstrict-prototypes -Wcast-align -Wno-unused-function -fno-common -fvisibility=hidden ${CMAKE_C_FLAGS}")
-elseif (CMAKE_COMPILER_IS_GNUCC)
-  set(RMQ_C_FLAGS "-Wall -Wextra -pedantic -Wstrict-prototypes -Wcast-align -Wno-unused-function -fno-common")
-  execute_process(COMMAND ${CMAKE_C_COMPILER} -dumpversion OUTPUT_VARIABLE GCC_VERSION)
-  if (GCC_VERSION VERSION_GREATER 4.0 OR GCC_VERSION VERSION_EQUAL 4.0)
-      set(RMQ_C_FLAGS "${RMQ_C_FLAGS} -fvisibility=hidden")
-  endif()
-  set(CMAKE_C_FLAGS "${RMQ_C_FLAGS} ${CMAKE_C_FLAGS}")
-endif ()
-
-if (CMAKE_GENERATOR MATCHES ".*(Make|Ninja).*"
-    AND NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
-  message(STATUS "CMAKE_BUILD_TYPE not specified. Creating ${CMAKE_BUILD_TYPE} build")
-endif()
-
 include(TestCInline)
 include(CheckFunctionExists)
 include(CheckSymbolExists)
@@ -60,16 +47,6 @@ include(CheckLibraryExists)
 include(CMakePushCheckState)
 include(GNUInstallDirs)
 include(CheckCCompilerFlag)
-
-CHECK_C_COMPILER_FLAG("-std=gnu90" HAVE_GNU90)
-if (HAVE_GNU90)
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu90")
-else()
-  CHECK_C_COMPILER_FLAG("-std=c90" HAVE_C90)
-  if (HAVE_C90)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c90")
-  endif()
-endif()
 
 # Detect if we need to link against a socket library:
 cmake_push_check_state()
@@ -143,105 +120,6 @@ if (CLOCK_GETTIME_NEEDS_LIBRT)
   set(LIBRT rt)
 endif()
 
-option(REGENERATE_AMQP_FRAMING "Regenerate amqp_framing.h/amqp_framing.c sources (for developer use)" OFF)
-mark_as_advanced(REGENERATE_AMQP_FRAMING)
-
-if (REGENERATE_AMQP_FRAMING)
-  find_package(PythonInterp)
-  if (NOT PYTHONINTERP_FOUND)
-    message(FATAL_ERROR "REGENERATE_AMQP_FRAMING requires Python to be available")
-  endif ()
-
-  #Determine Python Version:
-  if(PYTHON_EXECUTABLE)
-    execute_process(COMMAND "${PYTHON_EXECUTABLE}" -c
-      "import sys; sys.stdout.write(';'.join([str(x) for x in sys.version_info[:3]]))"
-      OUTPUT_VARIABLE _VERSION
-      RESULT_VARIABLE _PYTHON_VERSION_RESULT
-      ERROR_QUIET)
-    if(NOT _PYTHON_VERSION_RESULT)
-      string(REPLACE ";" "." PYTHON_VERSION_STRING "${_VERSION}")
-      list(GET _VERSION 0 PYTHON_VERSION_MAJOR)
-      list(GET _VERSION 1 PYTHON_VERSION_MINOR)
-      list(GET _VERSION 2 PYTHON_VERSION_PATCH)
-      if(PYTHON_VERSION_PATCH EQUAL 0)
-        # it's called "Python 2.7", not "2.7.0"
-        string(REGEX REPLACE "\\.0$" "" PYTHON_VERSION_STRING "${PYTHON_VERSION_STRING}")
-      endif()
-    else()
-      # sys.version predates sys.version_info, so use that
-      execute_process(COMMAND "${PYTHON_EXECUTABLE}" -c "import sys; sys.stdout.write(sys.version)"
-        OUTPUT_VARIABLE _VERSION
-        RESULT_VARIABLE _PYTHON_VERSION_RESULT
-        ERROR_QUIET)
-      if(NOT _PYTHON_VERSION_RESULT)
-        string(REGEX REPLACE " .*" "" PYTHON_VERSION_STRING "${_VERSION}")
-        string(REGEX REPLACE "^([0-9]+)\\.[0-9]+.*" "\\1" PYTHON_VERSION_MAJOR "${PYTHON_VERSION_STRING}")
-        string(REGEX REPLACE "^[0-9]+\\.([0-9])+.*" "\\1" PYTHON_VERSION_MINOR "${PYTHON_VERSION_STRING}")
-        if(PYTHON_VERSION_STRING MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+.*")
-          string(REGEX REPLACE "^[0-9]+\\.[0-9]+\\.([0-9]+).*" "\\1" PYTHON_VERSION_PATCH "${PYTHON_VERSION_STRING}")
-        else()
-          set(PYTHON_VERSION_PATCH "0")
-        endif()
-      else()
-        # sys.version was first documented for Python 1.5, so assume
-        # this is older.
-        set(PYTHON_VERSION_STRING "1.4")
-        set(PYTHON_VERSION_MAJOR "1")
-        set(PYTHON_VERSION_MAJOR "4")
-        set(PYTHON_VERSION_MAJOR "0")
-      endif()
-    endif()
-    unset(_PYTHON_VERSION_RESULT)
-    unset(_VERSION)
-  endif(PYTHON_EXECUTABLE)
-
-  # If we're running v3.x look for a 2to3 utility
-  if (PYTHON_VERSION_MAJOR GREATER 2)
-    get_filename_component(PYTHON_EXE_DIR ${PYTHON_EXECUTABLE} PATH)
-    find_program(PYTHON_2TO3_EXECUTABLE
-      NAMES 2to3
-      HINTS ${PYTHON_EXE_DIR}
-      )
-
-    if ("PYTHON_2TO3_EXECUTABLE-NOTFOUND" STREQUAL PYTHON_2TO3_EXECUTABLE)
-      message(FATAL_ERROR "Unable to find 2to3 python utility, specify python 2.7 or specify 2to3 utility")
-    endif ()
-  endif (PYTHON_VERSION_MAJOR GREATER 2)
-
-
-  #check for json or simplejson
-  execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import json"
-    RESULT_VARIABLE CHECK_PYTHON_JSON_FAILED
-  )
-
-  if (CHECK_PYTHON_JSON_FAILED)
-    execute_process(COMMAND ${PYTHON_EXECUTABLE} -c "import simplejson"
-      RESULT_VARIABLE CHECK_PYTHON_SIMPLEJSON_FAILED
-    )
-
-    if (CHECK_PYTHON_SIMPLEJSON_FAILED)
-      message(FATAL_ERROR "REGENERATE_AMQP_FRAMING requires a python with json or simplejson modules")
-    endif (CHECK_PYTHON_SIMPLEJSON_FAILED)
-  endif (CHECK_PYTHON_JSON_FAILED)
-
-
-  find_path(AMQP_CODEGEN_DIR
-    amqp_codegen.py
-    PATHS ${CMAKE_CURRENT_SOURCE_DIR}/codegen
-          ${CMAKE_CURRENT_SOURCE_DIR}/rabbitmq-codegen
-          ${CMAKE_CURRENT_SOURCE_DIR}/../rabbitmq-codegen
-          DOC "Path to directory containing amqp_codegen.py (rabbitmq-codegen)"
-          NO_DEFAULT_PATH
-          )
-
-  if (AMQP_CODEGEN_DIR STREQUAL "AMQP_CODEGEN_DIR-NOTFOUND")
-    message(SEND_ERROR "REGENERATE_AMQP_FRAMING requires the amqp_codegen.py script. If this is a git clone you can:\n\ngit submodule init\ngit submodule update\n\n Or set AMQP_CODEGEN_DIR to directory containing amqp_codegen.py")
-  else ()
-    message(STATUS "Found amqp_codegen.py in ${AMQP_CODEGEN_DIR}")
-  endif()
-endif (REGENERATE_AMQP_FRAMING)
-
 find_package(POPT)
 find_package(XmlTo)
 find_package(Doxygen)
@@ -252,13 +130,13 @@ endif()
 
 find_package(Threads)
 
-option(BUILD_SHARED_LIBS "Build rabbitmq-c as a shared library" ON)
+option(BUILD_SHARED_LIBS "Build rabbitmq-c as a shared library" OFF)
 option(BUILD_STATIC_LIBS "Build rabbitmq-c as a static library" ON)
 
-option(BUILD_EXAMPLES "Build Examples" ON)
-option(BUILD_TOOLS "Build Tools (requires POPT Library)" ${POPT_FOUND})
-option(BUILD_TOOLS_DOCS "Build man pages for Tools (requires xmlto)" ${DO_DOCS})
-option(BUILD_TESTS "Build tests (run tests with make test)" ON)
+option(BUILD_EXAMPLES "Build Examples" OFF)
+option(BUILD_TOOLS "Build Tools (requires POPT Library)" OFF)
+option(BUILD_TOOLS_DOCS "Build man pages for Tools (requires xmlto)" OFF)
+option(BUILD_TESTS "Build tests (run tests with make test)" OFF)
 option(BUILD_API_DOCS "Build Doxygen API docs" ${DOXYGEN_FOUND})
 option(ENABLE_SSL_SUPPORT "Enable SSL support" ON)
 option(ENABLE_THREAD_SAFETY "Enable thread safety when using OpenSSL" ${Threads_FOUND})
@@ -267,21 +145,8 @@ set(SSL_ENGINE "OpenSSL" CACHE STRING "SSL Backend to use, valid options: OpenSS
 mark_as_advanced(SSL_ENGINE)
 
 if (ENABLE_SSL_SUPPORT)
-  if (SSL_ENGINE STREQUAL "OpenSSL")
-    find_package(OpenSSL 0.9.8 REQUIRED)
-
-  elseif (SSL_ENGINE STREQUAL "cyaSSL")
-    find_package(cyaSSL REQUIRED)
-
-  elseif (SSL_ENGINE STREQUAL "GnuTLS")
-    find_package(GnuTLS REQUIRED)
-
-  elseif (SSL_ENGINE STREQUAL "PolarSSL")
-    find_package(PolarSSL REQUIRED)
-
-  else()
-    message(FATAL_ERROR "Unsupported SSL_ENGINE ${SSL_ENGINE}, valid engines: OpenSSL, cyaSSL, GnuTLS, or PolarSSL")
-  endif()
+    hunter_add_package(OpenSSL)
+    find_package(OpenSSL REQUIRED)
 endif()
 
 if (NOT BUILD_SHARED_LIBS AND NOT BUILD_STATIC_LIBS)
@@ -371,6 +236,7 @@ set(generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
 set(version_config "${generated_dir}/${PROJECT_NAME}ConfigVersion.cmake")
 set(project_config "${generated_dir}/${PROJECT_NAME}Config.cmake")
 set(targets_export_name "librabbitmqTargets")
+set(namespace "${PROJECT_NAME}::")
 
 include(CMakePackageConfigHelpers)
 
