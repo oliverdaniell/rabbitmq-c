@@ -1,6 +1,6 @@
 # vim:set ts=2 sw=2 sts=2 et:
-cmake_minimum_required(VERSION 2.6)
-project(rabbitmq-c "C")
+cmake_minimum_required(VERSION 3.0.0)
+project(rabbitmq-c VERSION 5.1.1 LANGUAGES "C")
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
@@ -362,3 +362,33 @@ if (BUILD_STATIC_LIBS)
 else ()
   message(STATUS "Building rabbitmq as a static library - no")
 endif ()
+
+set(config_install_dir "lib/cmake/${PROJECT_NAME}")
+set(include_install_dir "include")
+
+set(generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
+set(version_config "${generated_dir}/${PROJECT_NAME}ConfigVersion.cmake")
+set(project_config "${generated_dir}/${PROJECT_NAME}Config.cmake")
+set(targets_export_name "librabbitmqTargets")
+
+include(CMakePackageConfigHelpers)
+
+# Note: PROJECT_VERSION is used as a VERSION
+write_basic_package_version_file(
+  "${version_config}" COMPATIBILITY SameMajorVersion
+)
+
+# Note: variable 'targets_export_name' used
+configure_file("cmake/Config.cmake.in" "${project_config}" @ONLY)
+
+install(
+  FILES "${project_config}" "${version_config}"
+  DESTINATION "${config_install_dir}"
+)
+
+install(
+  EXPORT "${targets_export_name}"
+  NAMESPACE "${namespace}"
+  DESTINATION "${config_install_dir}"
+)
