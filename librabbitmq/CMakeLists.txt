@@ -164,7 +164,9 @@ endif (BUILD_SHARED_LIBS)
 if (BUILD_STATIC_LIBS)
     add_library(rabbitmq-static STATIC ${RABBITMQ_SOURCES})
 
-    target_link_libraries(rabbitmq-static ${RMQ_LIBRARIES})
+message("${libs_private}")
+
+    target_link_libraries(rabbitmq-static ${OPENSSL_LIBRARIES} ${libs_private})
 
     set_target_properties(rabbitmq-static PROPERTIES COMPILE_DEFINITIONS AMQP_STATIC)
     if (WIN32)
@@ -173,10 +175,10 @@ if (BUILD_STATIC_LIBS)
         set_target_properties(rabbitmq-static PROPERTIES VERSION ${RMQ_VERSION} SOVERSION ${RMQ_SOVERSION} OUTPUT_NAME rabbitmq)
     endif (WIN32)
 
-    install(TARGETS rabbitmq-static
+    install(TARGETS rabbitmq-static EXPORT librabbitmqTargets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+		INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         )
-    install_pdb(rabbitmq-static)
 
     if (NOT DEFINED RMQ_LIBRARY_TARGET)
         set(RMQ_LIBRARY_TARGET rabbitmq-static)

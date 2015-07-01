@@ -1,8 +1,11 @@
-# vim:set ts=2 sw=2 sts=2 et:
-cmake_minimum_required(VERSION 2.6)
-project(rabbitmq-c "C")
+cmake_minimum_required(VERSION 3.0.0)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+include("cmake/HunterGate.cmake")
+HunterGate(
+    URL "https://github.com/ruslo/hunter/archive/v0.11.4.tar.gz"
+    SHA1 "caded3d303e471f789db67e658b5a4ffb221d670"
+)
+project(rabbitmq-c VERSION 4.0.0 LANGUAGES "C")
 
 # Follow all steps below in order to calculate new ABI version when updating the library
 # NOTE: THIS IS UNRELATED to the actual project version
@@ -34,24 +37,13 @@ string(REGEX MATCH "[0-9]+" _API_VERSION_PATCH ${_API_VERSION_PATCH})
 # VERSION to match what is in autotools
 set(VERSION ${_API_VERSION_MAJOR}.${_API_VERSION_MINOR}.${_API_VERSION_PATCH})
 
-if (MSVC)
-  set(CMAKE_C_FLAGS "/W4 /nologo ${CMAKE_C_FLAGS}")
-elseif (CMAKE_C_COMPILER_ID MATCHES ".*Clang")
-  set(CMAKE_C_FLAGS "-Wall -Wextra -pedantic -Wstrict-prototypes -Wcast-align -Wno-unused-function -fno-common -fvisibility=hidden")
-elseif (CMAKE_COMPILER_IS_GNUCC)
-  set(RMQ_C_FLAGS "-Wall -Wextra -pedantic -Wstrict-prototypes -Wcast-align -Wno-unused-function -fno-common")
-  execute_process(COMMAND ${CMAKE_C_COMPILER} -dumpversion OUTPUT_VARIABLE GCC_VERSION)
-  if (GCC_VERSION VERSION_GREATER 4.0 OR GCC_VERSION VERSION_EQUAL 4.0)
-      set(RMQ_C_FLAGS "${RMQ_C_FLAGS} -fvisibility=hidden")
-  endif()
-  set(CMAKE_C_FLAGS "${RMQ_C_FLAGS} ${CMAKE_C_FLAGS}")
-endif ()
-
 if (CMAKE_GENERATOR MATCHES ".*(Make|Ninja).*"
     AND NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
   message(STATUS "CMAKE_BUILD_TYPE not specified. Creating ${CMAKE_BUILD_TYPE} build")
 endif()
+
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(TestCInline)
 include(CheckFunctionExists)
@@ -223,14 +215,14 @@ endif()
 
 find_package(Threads)
 
-option(BUILD_SHARED_LIBS "Build rabbitmq-c as a shared library" ON)
-option(BUILD_STATIC_LIBS "Build rabbitmq-c as a static library" OFF)
+option(BUILD_SHARED_LIBS "Build rabbitmq-c as a shared library" OFF)
+option(BUILD_STATIC_LIBS "Build rabbitmq-c as a static library" ON)
 
 option(BUILD_EXAMPLES "Build Examples" ON)
-option(BUILD_TOOLS "Build Tools (requires POPT Library)" ${POPT_FOUND})
-option(BUILD_TOOLS_DOCS "Build man pages for Tools (requires xmlto)" ${DO_DOCS})
-option(BUILD_TESTS "Build tests (run tests with make test)" ON)
-option(BUILD_API_DOCS "Build Doxygen API docs" ${DOXYGEN_FOUND})
+option(BUILD_TOOLS "Build Tools (requires POPT Library)" OFF)
+option(BUILD_TOOLS_DOCS "Build man pages for Tools (requires xmlto)" OFF)
+option(BUILD_TESTS "Build tests (run tests with make test)" OFF)
+option(BUILD_API_DOCS "Build Doxygen API docs" OFF)
 option(ENABLE_SSL_SUPPORT "Enable SSL support" ON)
 option(ENABLE_THREAD_SAFETY "Enable thread safety when using OpenSSL" ${Threads_FOUND})
 
@@ -239,17 +231,8 @@ mark_as_advanced(SSL_ENGINE)
 
 if (ENABLE_SSL_SUPPORT)
   if (SSL_ENGINE STREQUAL "OpenSSL")
-    find_package(OpenSSL 0.9.8 REQUIRED)
-
-  elseif (SSL_ENGINE STREQUAL "cyaSSL")
-    find_package(cyaSSL REQUIRED)
-
-  elseif (SSL_ENGINE STREQUAL "GnuTLS")
-    find_package(GnuTLS REQUIRED)
-
-  elseif (SSL_ENGINE STREQUAL "PolarSSL")
-    find_package(PolarSSL REQUIRED)
-
+    hunter_add_package(OpenSSL)
+    find_package(OpenSSL REQUIRED)
   else()
     message(FATAL_ERROR "Unsupported SSL_ENGINE ${SSL_ENGINE}, valid engines: OpenSSL, cyaSSL, GnuTLS, or PolarSSL")
   endif()
@@ -259,8 +242,16 @@ if (NOT BUILD_SHARED_LIBS AND NOT BUILD_STATIC_LIBS)
     message(FATAL_ERROR "One or both of BUILD_SHARED_LIBS or BUILD_STATIC_LIBS must be set to ON to build")
 endif()
 
-if (WIN32 AND BUILD_STATIC_LIBS)
-  message(FATAL_ERROR "The rabbitmq-c library cannot be built as a static library on Win32. Set BUILD_STATIC_LIBS=OFF to get around this.")
+set(libs_private ${SOCKET_LIBRARIES} ${LIBRT})
+if (ENABLE_SSL_SUPPORT)
+  if (SSL_ENGINE STREQUAL "OpenSSL")
+	if(WIN32)
+		set(libs_private ${libs_private} Crypt32)
+	endif(WIN32)
+  endif()
+  if (ENABLE_THREAD_SAFETY)
+    set(libs_private ${libs_private} ${CMAKE_THREAD_LIBS_INIT})
+  endif()
 endif()
 
 add_subdirectory(librabbitmq)
@@ -298,16 +289,6 @@ if (BUILD_API_DOCS)
     )
 endif ()
 
-set(libs_private ${SOCKET_LIBRARIES} ${LIBRT})
-if (ENABLE_SSL_SUPPORT)
-  if (SSL_ENGINE STREQUAL "OpenSSL")
-    set(requires_private "openssl")
-  endif()
-  if (ENABLE_THREAD_SAFETY)
-    set(libs_private ${libs_private} ${CMAKE_THREAD_LIBS_INIT})
-  endif()
-endif()
-
 set(prefix ${CMAKE_INSTALL_PREFIX})
 set(exec_prefix "\${prefix}")
 set(libdir "\${exec_prefix}/${CMAKE_INSTALL_LIBDIR}")
@@ -332,3 +313,34 @@ if (BUILD_STATIC_LIBS)
 else ()
   message(STATUS "Building rabbitmq as a static library - no")
 endif ()
+
+set(config_install_dir "lib/cmake/${PROJECT_NAME}")
+set(include_install_dir "include")
+
+set(generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
+set(version_config "${generated_dir}/${PROJECT_NAME}ConfigVersion.cmake")
+set(project_config "${generated_dir}/${PROJECT_NAME}Config.cmake")
+set(targets_export_name "librabbitmqTargets")
+set(namespace "${PROJECT_NAME}::")
+
+include(CMakePackageConfigHelpers)
+
+# Note: PROJECT_VERSION is used as a VERSION
+write_basic_package_version_file(
+  "${version_config}" COMPATIBILITY SameMajorVersion
+)
+
+# Note: variable 'targets_export_name' used
+configure_file("cmake/Config.cmake.in" "${project_config}" @ONLY)
+
+install(
+  FILES "${project_config}" "${version_config}"
+  DESTINATION "${config_install_dir}"
+)
+
+install(
+  EXPORT "${targets_export_name}"
+  NAMESPACE "${namespace}"
+  DESTINATION "${config_install_dir}"
+)
