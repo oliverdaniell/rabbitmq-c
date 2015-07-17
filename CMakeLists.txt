@@ -1,10 +1,5 @@
 cmake_minimum_required(VERSION 3.0.0)
 
-include("cmake/HunterGate.cmake")
-HunterGate(
-    URL "https://github.com/ruslo/hunter/archive/v0.11.4.tar.gz"
-    SHA1 "caded3d303e471f789db67e658b5a4ffb221d670"
-)
 project(rabbitmq-c VERSION 4.0.0 LANGUAGES "C")
 
 # Follow all steps below in order to calculate new ABI version when updating the library
@@ -223,19 +218,14 @@ option(BUILD_TOOLS "Build Tools (requires POPT Library)" OFF)
 option(BUILD_TOOLS_DOCS "Build man pages for Tools (requires xmlto)" OFF)
 option(BUILD_TESTS "Build tests (run tests with make test)" OFF)
 option(BUILD_API_DOCS "Build Doxygen API docs" OFF)
-option(ENABLE_SSL_SUPPORT "Enable SSL support" ON)
+option(ENABLE_SSL_SUPPORT "Enable SSL support" OFF)
 option(ENABLE_THREAD_SAFETY "Enable thread safety when using OpenSSL" ${Threads_FOUND})
 
 set(SSL_ENGINE "OpenSSL" CACHE STRING "SSL Backend to use, valid options: OpenSSL, cyaSSL, GnuTLS, PolarSSL")
 mark_as_advanced(SSL_ENGINE)
 
 if (ENABLE_SSL_SUPPORT)
-  if (SSL_ENGINE STREQUAL "OpenSSL")
-    hunter_add_package(OpenSSL)
-    find_package(OpenSSL REQUIRED)
-  else()
     message(FATAL_ERROR "Unsupported SSL_ENGINE ${SSL_ENGINE}, valid engines: OpenSSL, cyaSSL, GnuTLS, or PolarSSL")
-  endif()
 endif()
 
 if (NOT BUILD_SHARED_LIBS AND NOT BUILD_STATIC_LIBS)
